@@ -1,28 +1,31 @@
 #!/usr/bin/env bash
 
-echo "Please enter EFI paritition: (example /dev/sda1 or /dev/nvme0n1p1)"
+echo "Selecciona la partición EFI: (DEBE ESTAR EN FAT 32)"
 read EFI
 
-echo "Please enter Root(/) paritition: (example /dev/sda3)"
+echo "Selecciona la partición Root: (Se borrará lo que hubiera)"
 read ROOT  
 
-echo "Please enter your Username"
+echo "Login:"
 read USER 
 
-echo "Please enter your Full Name"
-read NAME 
-
-echo "Please enter your Password"
+echo "Contraseña:"
 read PASSWORD 
 
 # make filesystems
-echo -e "\nCreating Filesystems...\n"
+echo -e "\nCreando Particiones...\n"
 
-mkfs.ext4 "${ROOT}"
+mkfs.btrfs -f "${ROOT}"
 
 # mount target
 mount "${ROOT}" /mnt
-mount --mkdir "$EFI" /mnt/boot/efi
+btrfs subvolume create /mnt/@
+btrfs subvolume create /mnt/@home
+umount /mnt
+mount -o compress=zstd,subvol=@ "${ROOT}" /mnt
+mkdir -p /mnt/home
+mount -o compress=zstd,subvol=@home "${ROOT}" /mnt/home
+mount --mkdir "$EFI" /mnt/efi
 
 echo "--------------------------------------"
 echo "-- INSTALLING Base Arch Linux --"
@@ -33,20 +36,18 @@ pacstrap /mnt base base-devel linux linux-firmware linux-headers networkmanager 
 genfstab -U /mnt >> /mnt/etc/fstab
 
 cat <<REALEND > /mnt/next.sh
-useradd -m $USER
-usermod -c "${NAME}" $USER
-usermod -aG wheel,storage,power,audio,video $USER
+useradd -aG wheel $USER
 echo $USER:$PASSWORD | chpasswd
 sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 
 echo "-------------------------------------------------"
-echo "Setup Language to US and set locale"
+echo "Setup Language to ES and set locale"
 echo "-------------------------------------------------"
-sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+sed -i 's/^#es_ES.UTF-8 UTF-8/es_ES.UTF-8 UTF-8/' /etc/locale.gen
 locale-gen
-echo "LANG=en_US.UTF-8" >> /etc/locale.conf
+echo "LANG=es_ES.UTF-8" >> /etc/locale.conf
 
-ln -sf /usr/share/zoneinfo/Asia/Kathmandu /etc/localtime
+ln -sf /usr/share/zoneinfo/Europe/Madrid /etc/localtime
 hwclock --systohc
 
 echo "archlinux" > /etc/hostname
@@ -61,7 +62,7 @@ echo "-- Bootloader Installation  --"
 echo "--------------------------------------"
 
 pacman -S grub ntfs-3g os-prober efibootmgr --noconfirm --needed
-grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="Arch Linux"
+grub-install --target=x86_64-efi --efi-directory=/efi --bootloader-id=GRUB
 grub-mkconfig -o /boot/grub/grub.cfg
 
 echo "-------------------------------------------------"
